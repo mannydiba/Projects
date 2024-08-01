@@ -1,0 +1,353 @@
+---
+title: "Assignment Statistical Modelling"
+author: "Mariagrazia Di Bartolomeo"
+date: "2024-05-16"
+output: html_document
+---
+Once we've set up the working directory, we've imported our dataset.
+```{r import, echo=TRUE}
+dataset=read.csv("5304201.csv")
+head(dataset)
+
+```
+
+## PROBLEM 1
+To solve the first point of the problem 1, we've created a matrix with the 14 continous predictors only. Then we set up a for cycle, in order to get a plot between \(Y\) and each of the \(q\) intermediate scores. 
+```{r prob1.1, echo=TRUE}
+attach(dataset)
+X_midexams=cbind(X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14)
+head(X_midexams)
+par(mfrow=c(3,2))
+
+for( p in 1:13) {
+  plot(X_midexams[,p], Y, xlab ="Intermediate score", ylab="Final score", main = "Relationship between final and intermediate score", pch=16)
+}
+
+```
+
+We can observe that these graphs aren't so clear to explain the relationship between \(Y\) and each of the \(q\) intermediate scores. 
+For some of them, there appears to be correlation, while for others, there is no clear pattern.
+
+
+About the second point of the first problem, we've created a data frame \(predictors\) selecting only categorical predictors (each of ones correspond to one of the training program). Using a loop, we've compared through box plots the distribution of \(Y\) between the two groups: students who attended and who did not attend the program.
+
+
+```{r prob1.2, echo=TRUE}
+x=as.data.frame(dataset[,c(16:23)])
+head(x)
+predictors= c("X15", "X16", "X17", "X18", "X19", "X20", "X21", "X22")
+par(mfrow=c(2,4))
+for(x in predictors){
+  boxplot(Y ~ dataset[[x]], data = dataset, main = "Y distribution", xlab= "Attended program", ylab="y")
+}
+```
+
+Even if there's no a clear difference, as we might expect, we can see that students who attended the program tends to have higher grades compared to those who didn't.
+
+## PROBLEM 2
+To fit a suitable regression model, we've constructed a matrix containing the available predictors, excluding the intercept term. Subsequently, we've applied linear regression to the prepared dataset.
+```{r problem 2, echo=TRUE}
+library(ISLR)
+X= model.matrix(Y ~ ., dataset)[,-1]
+head(X)
+y=dataset$Y
+head(y)
+
+model=lm(Y~., dataset)
+summary(model)
+```
+With regard to predictors \(X4\) and \(X18\), the coefficient estimates are:
+```{r coefficients, echo=TRUE}
+coef_X4_X18=summary(model)$coefficients[c("X4", "X18"),]
+coef_X4_X18
+```
+With respect to \(X4\), its $\hat{\beta}_4$ is \(0.110398\).  This coefficient represents the average increase in the response variable \(Y\) due to a one-unit increase in the predictor  \(X4\) (positive correlation), holding all other predictors constant \((ceteris  paribus)\).
+Also, the \(p-value\) related to the predictor $\hat{\beta}_4$ is very low: as a consequence, \(X4\) is a significant predictor to explain the the final score \(Y\).
+
+
+About \(X18\): its  $\hat{\beta}_{18}$ is \(4.933321\).
+\(X18\) is a binary categorical predictors, indicating whether the student attended a specific training program \(1\) or not \(0\) during the master program. So, its interpretation is about the difference of the expected response variable \(Y\) between students who attended the program and those one who didn't.
+
+Therefore, \(4.933321\) correspond to the difference "in mean" of the final score obtained at the end of the first year between students who decided to attend a specific training program and those who did not attend.
+
+In order to provide an overall goodness-of-fit measure for the model, we've calculated the \(R^2\). It is a measure of how well the linear regression model fits the data. It indicates the proportion of variation in the dependent variable \(Y\) that is explained by the independent variables in the model $\tilde{X}$.
+```{r r squared, echo=TRUE}
+r_squared=summary(model)$r.squared
+r_squared
+
+```
+
+The \(R^2\) is `r r_squared` : so the \(91\%\) of the variability of \(Y\) is explained by the model.
+
+
+In general, \(R^2\) doesn't account for model complexity. As the number of predictors increases,\(R^2\) tends to increase as well, potentially favoring models with more predictors even if they are not the most appropriate ones. To address this issue, we can use the adjusted \(R^2\), a measure that account for model complexity.
+
+Even if  we're not comparing different models, we've calculated the adjusted \(R^2\).
+```{r adjr, echo=TRUE}
+adj_rsquared=summary(model)$adj.r.squared
+adj_rsquared
+```
+
+
+## Shrinkage method
+In order to perform variable selection and identify those predictors that are mostly related to the response \(Y\), we've applied a shrinkage method: in particular, the ridge regression. 
+It make us able to find the best model which doesn't include all the predictors, but only those ones most related to \(Y\).
+
+Since we can apply the ridge for several values of lambda $\lambda$, we must define which is the best one to use: with the \(k\)-\(fold\) cross validation, we've selected the best one.
+
+As first step, we've created a grid of values for lambda.
+```{r grid, echo=TRUE}
+library(glmnet)
+seq(-5,5, length = 100)
+grid=10^seq(-5,5, length = 100)
+grid
+plot(grid)
+
+```
+
+Then, we've applied the ridge regression for every $\lambda$ in the grid (each predictor is standardized before the model fitting, since $\hat{\beta}_{ridge}$ coefficients aren't scale invariant as the $\hat{\beta}_{OLS}$). 
+
+As result, we get a vector of $\hat{\beta}_{ridge}$ coefficients estimates for each $\lambda$ values. 
+
+Plugging everything in a graph, we can see the behavior of the $\hat{\beta}_{ridge}$ as a function of $\lambda$.
+
+As $\lambda$ increases, the $\hat{\beta}_{ridge}$ decreases, being equal zero in the limit case. While, if $\lambda$ is \(0\) the $\hat{\beta}_{ridge}$ will be exactly equal to $\hat{\beta}_{OLS}$.
+
+```{r ridge, echo=TRUE}
+ridge_grid=glmnet(X, y, alpha = 0, lambda = grid, standardize = TRUE)
+coef_grid = coef(ridge_grid)
+str(coef_grid)
+ridge_grid$lambda
+plot(ridge_grid$lambda)
+```
+
+To select the \(best\) $\lambda$, we've applied the \(k\)-\(fold\) cross validation method and looked for the lambda value with the lowest \(CV\)-\(error\). 
+```{r best_lambda, echo=TRUE}
+set.seed(5304201)
+cv.out = cv.glmnet(X, y, lambda = grid, alpha = 0)
+cv.out
+plot(cv.out) 
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+`r bestlam` is the \(best\) $\lambda$ that we must use to find the best subset predictors.
+
+So, in order to get the optimal model, we've fitted it, using the \(best\) ($\lambda$) found.
+
+```{r optimal_model, echo=TRUE}
+ridge_grid=glmnet(X, y, alpha = 0, lambda = bestlam, standardize = TRUE)
+ridge_grid
+```
+
+## PROBLEM 3
+
+We've created a new categorical variable \(Y\), called \(score\) indicating whether the student is admitted \((1)\) or not \((0)\) to the second year, based on his final grade. 
+
+We've used an if-else loop to determine the value of \(score\). If the final grade of the student is greater than or equal to \(60\), \(score\)  is set to \(1\); otherwise, it is set equal to \(0\).
+
+```{r y, echo=TRUE}
+score=ifelse( dataset$Y >= 60, 1, 0 )
+score
+
+```
+
+Then, we've applied a logistic regression model to predict the probability of admission for each student.
+
+```{r glm, echo=TRUE}
+out_glm=glm(score ~ X, family = binomial(link=logit))
+out_glm
+summary(out_glm)
+
+```
+To find the estimated coefficients $\hat{\beta}$, we've used the Maximum Likelihood estimator.
+It makes us able to find the $\hat{\beta}$  that maximize the Likelihood function.
+```{r betahat, echo=TRUE}
+beta_hat=out_glm$coefficients
+beta_hat
+```
+
+Once we've $\hat{\beta}$, we've plugged in the logit function. Doing the cross product between the transposed $\hat{\beta}$ vector and the matrix \(X\) of all the  correspond predictors, we've found \(z\).
+
+To get the estimated probabilities $\hat{\pi}_{i}$, we applied the inverse logit to \(z\).
+
+```{r pihat, echo=TRUE}
+xx=cbind(1,X)
+z=xx%*%beta_hat
+pi_hat=exp(z)/(1+exp(z))
+head(pi_hat)
+```
+
+Then we've provided a graphical comparison between the estimated probabilities and the true value of \(Y\).
+```{r plot, echo=TRUE}
+col_lab= c()
+
+col_lab[score==0] = "blue"
+col_lab[score==1] = "red"
+
+col_lab
+
+plot(pi_hat, xlab = "subject (i)", ylab = expression(hat(pi)[i]), col = col_lab)
+```
+
+The graph has individuals on the x-axis and the probability of passing the exam on the y-axis. Red points represent all students who have a passing grade, (i.e. having a score above 60 and so \(Y\) is 1), while for blue points, it's the opposite. 
+So basically, we can assess whether the probability is well estimated  or not. In this case, it seems to be well estimated  because the majority of students who passed the exam (the red points) are associated with high probabilities of passing it, and for the blue points, it's the opposite.
+
+
+
+
+
+
+
+Given the estimated probability $\hat{\pi}_{i}$, we aim to predict $\tilde{Y}_{i}$ by applying a threshold \(k\) \(∈\) \((0,1)\) to the estimated probability $\hat{\pi}_{i}$.
+
+To this end, we have generated a sequence of \(k\), ranging from \(0.1\) to \(0.9\) and for each \(k\), we've computed the \(Error Rate\)\((ER)\). 
+
+Then, we've plugged them in a plot to observe the \(Error Rate\) distribution with respect of the different \(k\) values.
+
+```{r k, echo=TRUE}
+k_values = seq(0.1, 0.9, by = 0.1)
+k_values
+error_rates = numeric(length(k_values))
+y_hat= list()
+
+for (i in 1:length(k_values)) {
+  predicted_lables = ifelse(pi_hat >= k_values[i], 1, 0)
+  y_hat[[i]] = predicted_lables
+  
+  error_rate = mean(predicted_lables != score)
+  error_rates[i]=error_rate
+}
+
+error_rates
+
+plot(k_values, error_rates, type="o", xlab="K values", ylab="ER",  main="Error Rates distribution" )
+```
+
+At this point, we need to select the optimal \(k\): it is the one leading to the minimum \(ER\). 
+```{r Er_min, echo=TRUE}
+optimal_k=k_values[which.min(error_rates)]
+min_er=min(error_rates)
+min_er
+optimal_k 
+```
+
+The best value of \(k\) is `r optimal_k `.
+
+
+## PROBLEM 4
+
+We first set up the input of our function: the \(matrix_x\) is an \((n,q)\)  matrix collecting \(n\) observations of the available \(q\) continuous predictors.
+
+```{r, echo=TRUE}
+library(mvtnorm)
+set.seed(5304201)
+col=dataset[,c(2:15)]
+matrix_x=as.data.frame(col)
+
+```
+Then, we've set up the function as follow:
+```{r function, echo=TRUE}
+lda_function <- function(X, y) {
+  
+  mu_hat0 <- colMeans(X[y == 0, ])
+  mu_hat1 <- colMeans(X[y == 1, ])
+  
+  
+  Sigma_hat <- cov(X)
+  
+  
+  pi_1 <- mean(y==1)
+  pi_0 <- 1 - pi_1
+  
+  n <- nrow(X)
+  probs <- matrix(0, nrow = n, ncol = 2)
+  
+ 
+  for (i in 1:n) {
+    prob0 <- dmvnorm(X[i, ], mean = mu_hat0, sigma = Sigma_hat)
+    prob1 <- dmvnorm(X[i, ], mean = mu_hat1, sigma = Sigma_hat)
+    
+    
+    posterior0 <- prob0 * pi_0
+    posterior1 <- prob1 * pi_1
+    
+
+    probs[i, ] <- c(posterior0, posterior1)
+  }
+  
+  return(probs)
+  
+}
+
+```
+
+In the function, we compute empirical means $\hat{\mu}_{0}$ and $\hat{\mu}_{1}$ and the empirical variance-covariance matrix $\hat{\Sigma}$ as estimators of the parameters required by \(LDA\). 
+
+Our $\hat{\mu}$ are group dependent, meaning that they're different in each group \((0,1)\) while the $\hat{\Sigma}$ is the same across groups.
+
+Then we calculate the prior probabilities $\pi_{0}$ and $\pi_{1}$.
+After, we build up a matrix to store the posterior probabilities. 
+
+Using a for cycle, we compute the estimated posterior probabilities for each observation. 
+In particular, we compute the probability density function (pdf) of a multivariate normal distribution for both classes (assumption of the Linear Discriminant Analysis). 
+
+Applying the Bayes' rule, we calculate the estimated posterior probabilities for each \(i\).
+
+## POINT 5
+We applied the function created in point 4, which implements Linear Discriminant Analysis, on our dataset using the available continuous predictors only (\(X2\) to \(X15\)). 
+
+We used the \(X\) matrix, containing our \(q\) continuous predictors, named \(matrix_x\), and the \(Y\) vector, indicating whether the student is admitted or not, named \(score\).
+
+
+```{r applyfunction, echo=TRUE}
+probs<-lda_function(matrix_x, score)
+head(probs)
+
+```
+
+Once we've applied our function, we get the estimated posterior probabilities. 
+We use them to make predictions on $\tilde{Y}$: whether each student will be admitted to the second year of the master program or not.
+\(Pr0\) and \(Pr1\) are respectively the posterior probabilities for class \(0\) (not admitted) and class \(1\) (admitted). 
+
+Using an if else statement, we assign to $\tilde{Y}$ a value of \(1\) if the posterior probability for class \(1\) is greater than or equal to the posterior probability for class \(0\) (\(Pr1\) >= \(Pr0\)), indicating that the student is predicted to be admitted. 
+Otherwise, a value of \(0\) is assigned, indicating that the student is predicted not to be admitted.
+
+```{r ytilda, echo=TRUE}
+pr0=probs[,1]
+pr1=probs[,2]
+y_tilda=ifelse(pr1 >= pr0 , 1, 0) 
+head(y_tilda)
+
+```
+
+Now, we want to compare the \(LDA\) results with the with those obtained using logistic regression at Point 3.
+
+We compute $\tilde{Y}_{logit}$, applied the Logistic regression with the optimal \(k\) found out in the point 3.  
+We check if each value $\hat{\pi}_{i}$ is greater than, or equal to the optimal threshold \(k\). If it is, $\tilde{Y}_{logit}$ is equal to \(1\), indicating the positive class (e.g., admitted), otherwise, $\tilde{Y}_{logit}$ is  \(0\), indicating the negative class (e.g. not admitted). 
+```{r ytildalogit, echo=TRUE}
+y_tilda.logit=ifelse(pi_hat>=optimal_k, 1, 0)
+yt_logit = as.vector(y_tilda.logit)
+head(yt_logit)
+```
+
+Then we check if the two results are the same.
+
+```{r check, echo=TRUE}
+check=ifelse(y_tilda==yt_logit, "Same result", "Different result")
+check
+
+```
+
+We observe some differences in the predictions. 
+
+Both \(LDA\) and logistic regression are classification methods, meaning that they're used when the response variable \(Y\) is binary. 
+With the logistic regression we model directly the conditioned probability of \(Y\). We use the logit link function $\hat{\pi}_{i} =logit^{-1}(z)$ , and from this one, we predict \(Y\).
+
+On the other hand, in \(LDA\), we need to recover the conditioned probability of \(Y\) as follow: first, we need to model the joint distribution of the predictors and then we apply the Bayesian Theorem to get the conditioned probability of \(Y\). 
+\(LDA\) operates under the assumption that within each group, the predictors follow a Multivariate Normal Distribution, with the same variance-covariance matrix in the Linear case. As a consequence, we have different parameters that we need to estimate : the mean within each group and the variance-covariance matrix.
+
+\(LDA\) and logistic regression seem to provide the same result: but the first one require requires more computational effort than the second one. Logistic regression provides directly the posterior probabilities.
+
+So, why do we need \(LDA\)? Parameters estimates of logistic regression can be unstable when the number of observations is small and/or the classes are well separated. Instead, \(Linear Discriminant Analysis\) is less sensitive to these issues and offers more reliable estimates.
+
